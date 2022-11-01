@@ -321,11 +321,7 @@ class CartPresenter implements PresenterInterface
             throw new \Exception('CartPresenter can only present instance of Cart');
         }
 
-        if ($shouldSeparateGifts) {
-            $rawProducts = $cart->getProductsWithSeparatedGifts();
-        } else {
-            $rawProducts = $cart->getProducts(true);
-        }
+        $rawProducts = $cart->getProducts(true);
 
         $products = array_map([$this, 'presentProduct'], $rawProducts);
         $products = $this->addCustomizedData($products, $cart);
@@ -491,6 +487,12 @@ class CartPresenter implements PresenterInterface
         Hook::exec('actionPresentCart',
             ['presentedCart' => &$result]
         );
+        
+        if ($shouldSeparateGifts) {       
+  $rawProducts = $cart->getProductsWithSeparatedGifts();
+  $products = array_map([$this, 'presentProduct'], $rawProducts);
+  $products = $this->addCustomizedData($products, $cart);
+}
 
         return $result;
     }
