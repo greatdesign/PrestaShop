@@ -237,6 +237,13 @@ class CategoryControllerCore extends ProductListingFrontController
     public function getBreadcrumbLinks()
     {
         $breadcrumb = parent::getBreadcrumbLinks();
+        
+        // adding root category to breadcrumbs
+       $rootCategory = Category::getRootCategory();
+       $breadcrumb['links'][] = array(
+        'title' => $rootCategory->name,
+        'url'   => $this->context->link->getCategoryLink($rootCategory->id, $rootCategory->link_rewrite),
+       );
 
         foreach ($this->category->getAllParents() as $category) {
             if ($category->id_parent != 0 && !$category->is_root_category && $category->active) {
