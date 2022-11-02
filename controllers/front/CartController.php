@@ -392,11 +392,24 @@ class CartControllerCore extends FrontController
         }
 
         $product = new Product($this->id_product, true, $this->context->language->id);
+
+        $productAttributes = null;
+        if ($product->hasAttributes()) {
+            $separator = Configuration::get('PS_ATTRIBUTE_ANCHOR_SEPARATOR');
+            $attributes = Product::getAttributesParams($this->id_product, $this->id_product_attribute);
+            foreach ($attributes as $attribute) {
+                $productAttributes .= $attribute['group'] . ' : ' . $attribute['name'] . ' ' . $separator . ' ';
+            }
+            $productAttributes = rtrim($productAttributes, $separator . ' ');
+        }
+
+
+
         if (!$product->id || !$product->active || !$product->checkAccess($this->context->cart->id_customer)) {
-            $this->{$ErrorKey}[] = $this->trans(
-                'This product (%product%) is no longer available.',
-                ['%product%' => $product->name],
-                'Shop.Notifications.Error'
+            $this->{$ErrorKey}[] = $this->translateProductNameWithAttributes(
+                'The product [1]%product%[/1] is no longer available.',
+                $product->name,
+                $productAttributes
             );
 
             return;
@@ -434,20 +447,21 @@ class CartControllerCore extends FrontController
 
         // Check product quantity availability
         if ('update' !== $mode && $this->shouldAvailabilityErrorBeRaised($product, $qty_to_check)) {
-            $this->{$ErrorKey}[] = $this->trans(
-                'The product is no longer available in this quantity.',
-                [],
-                'Shop.Notifications.Error'
+            $this->{$ErrorKey}[] = $this->translateProductNameWithAttributes(
+                'The product [1]%product%[/1] is no longer available in this quantity.',
+                $product->name,
+                $productAttributes
             );
         }
 
         // Check minimal_quantity
         if (!$this->id_product_attribute) {
             if ($qty_to_check < $product->minimal_quantity) {
-                $this->errors[] = $this->trans(
-                    'The minimum purchase order quantity for the product %product% is %quantity%.',
-                    ['%product%' => $product->name, '%quantity%' => $product->minimal_quantity],
-                    'Shop.Notifications.Error'
+                $this->errors[] = $this->translateProductNameWithAttributes(
+                    'The minimum purchase order quantity for the product [1]%product%[/1] is [1]%quantity%[/1].',
+                    $product->name,
+                    null,
+                    $product->minimal_quantity
                 );
 
                 return;
@@ -455,10 +469,11 @@ class CartControllerCore extends FrontController
         } else {
             $combination = new Combination($this->id_product_attribute);
             if ($qty_to_check < $combination->minimal_quantity) {
-                $this->errors[] = $this->trans(
-                    'The minimum purchase order quantity for the product %product% is %quantity%.',
-                    ['%product%' => $product->name, '%quantity%' => $combination->minimal_quantity],
-                    'Shop.Notifications.Error'
+                $this->errors[] = $this->translateProductNameWithAttributes(
+                    'The minimum purchase order quantity for the product [1]%product%[/1] is [1]%quantity%[/1].',
+                    $product->name,
+                    $productAttributes,
+                    $combination->minimal_quantity
                 );
 
                 return;
@@ -512,17 +527,17 @@ class CartControllerCore extends FrontController
                         'Shop.Notifications.Error'
                     );
                 } elseif (!$update_quantity) {
-                    $this->errors[] = $this->trans(
-                        'You already have the maximum quantity available for this product.',
-                        [],
-                        'Shop.Notifications.Error'
+                    $this->errors[] = $this->translateProductNameWithAttributes(
+                        'You already have the maximum quantity available for the product [1]%product%[/1].',
+                        $product->name,
+                        $productAttributes
                     );
                 } elseif ($this->shouldAvailabilityErrorBeRaised($product, $qty_to_check)) {
                     // check quantity after cart quantity update
-                    $this->{$ErrorKey}[] = $this->trans(
-                        'The product is no longer available in this quantity.',
-                        [],
-                        'Shop.Notifications.Error'
+                    $this->{$ErrorKey}[] = $this->translateProductNameWithAttributes(
+                        'The product [1]%product%[/1] is no longer available in this quantity.',
+                        $product->name,
+                        $productAttributes
                     );
                 }
             }
@@ -620,10 +635,9 @@ class CartControllerCore extends FrontController
             $currentProduct->hydrate($product);
 
             if ($currentProduct->hasAttributes() && $product['id_product_attribute'] === '0') {
-                return $this->trans(
-                   'The item %product% in your cart is now a product with attributes. Please delete it and choose one of its combinations to proceed with your order.',
-                    ['%product%' => $product['name']],
-                    'Shop.Notifications.Error'
+                return $this->translateProductNameWithAttributes(
+                    'The product [1]%product%[/1] is now a product with combinations. Please choose one to proceed with your order.',
+                   $product['name']
                 );
             }
         }
@@ -635,17 +649,26 @@ class CartControllerCore extends FrontController
         }
 
         if ($product['active']) {
-            return $this->trans(
-                'The item %product% in your cart is no longer available in this quantity. You cannot proceed with your order until the quantity is adjusted.',
-                ['%product%' => $product['name']],
-                'Shop.Notifications.Error'
+            if ((int) $product['quantity_available'] > 1 || (int) $product['quantity_available'] == 0) {
+                $sentence = 'There are only [1]%quantity%[/1] items of the product [1]%product%[/1] left. Please adjust the quantity to proceed with your order.';
+            } elseif ((int) $product['quantity_available'] == 1) {
+                $sentence = 'There is only [1]%quantity%[/1] item of the product [1]%product%[/1] left. Please adjust the quantity to proceed with your order.';
+            } else {
+                $sentence = 'The product [1]%product%[/1] in your cart is no longer available in this quantity. Please adjust the quantity to proceed with your order.';
+            }
+
+            return $this->translateProductNameWithAttributes(
+                $sentence,
+                $product['name'],
+                $product['attributes'],
+                $product['quantity_available']
             );
         }
 
-        return $this->trans(
-            'This product (%product%) is no longer available.',
-            ['%product%' => $product['name']],
-            'Shop.Notifications.Error'
+        return $this->translateProductNameWithAttributes(
+            'The product [1]%product%[/1] is no longer available.',
+            $product['name'],
+            $product['attributes']
         );
     }
 
@@ -659,15 +682,39 @@ class CartControllerCore extends FrontController
         foreach ($productList as $product) {
             if ($product['minimal_quantity'] > $product['cart_quantity']) {
                 // display minimal quantity warning error message
-                $this->errors[] = $this->trans(
-                    'The minimum purchase order quantity for the product %product% is %quantity%.',
-                    [
-                        '%product%' => $product['name'],
-                        '%quantity%' => $product['minimal_quantity'],
-                    ],
-                    'Shop.Notifications.Error'
+                $this->errors[] = $this->translateProductNameWithAttributes(
+                    'The minimum order quantity for the product [1]%product%[/1] is [1]%quantity%[/1].',
+                    $product['name'],
+                    $product['attributes'],
+                    $product['minimal_quantity']
                 );
             }
         }
     }
+
+
+
+    /**
+     * @param string $sentence Sentence that contains "[1]%product%[/1]" (and "[1]%quantity%[/1]" in some)
+     * @param string $product_name The product name
+     * @param string|null $attributes The string of attributes
+     * @param int|null $quantity The quantity param (present in some sentences)
+     *
+     * @return string
+     */
+    private function translateProductNameWithAttributes(string $sentence, string $product_name, string $attributes = null, int $quantity = null): string
+    {
+        return $this->trans(
+            $sentence,
+            [
+                '%product%' => $product_name . (isset($attributes) && !empty($attributes) ? ' (' . $attributes . ')' : ''),
+                '%quantity%' => $quantity ?? '',
+                '[1]' => '<strong>',
+                '[/1]' => '</strong>',
+            ],
+            'Shop.Notifications.Error'
+        );
+    }
+
+
 }
